@@ -901,13 +901,23 @@ export const AllocationDashboard: React.FC<AllocationDashboardProps> = ({
               Status keterisian meja dan alokasi siswa per ruangan
             </p>
           </div>
-          <button
-            onClick={() => onNavigateTab('rooms')}
-            className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1"
-          >
-            <span>Kelola Daftar Ruangan</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onNavigateTab('circulation')}
+              className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 flex items-center gap-1"
+            >
+              <span>Lihat Sirkulasi Ruang & Kelas</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-slate-300">|</span>
+            <button
+              onClick={() => onNavigateTab('rooms')}
+              className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1"
+            >
+              <span>Kelola Daftar Ruangan</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

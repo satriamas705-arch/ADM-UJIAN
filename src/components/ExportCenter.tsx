@@ -10,15 +10,21 @@ import {
   AlertTriangle,
   Layers,
   Calendar,
+  Repeat,
 } from 'lucide-react';
 import { Student, Room, ExamSettings, ExamScheduleItem } from '../types';
-import { exportAllocationToExcel, exportStudentTemplateExcel } from '../utils/exportExcel';
+import {
+  exportAllocationToExcel,
+  exportCirculationToExcel,
+  exportStudentTemplateExcel,
+} from '../utils/exportExcel';
 import {
   exportAttendancePdfForRoom,
   exportAllRoomsAttendancePdf,
   exportDoorPosterPdf,
   exportExamCardsPdf,
   exportSchedulePdf,
+  exportCirculationPdf,
 } from '../utils/exportPdf';
 
 interface ExportCenterProps {
@@ -101,7 +107,31 @@ export const ExportCenter: React.FC<ExportCenterProps> = ({
       exportSchedulePdf(schedules, settings);
       showSuccess('Jadwal Pelaksanaan Ujian resmi berhasil diunduh dalam format PDF!');
     } catch (e: unknown) {
-      alert('Gagal mengekspor Jadwal PDF: ' + (e instanceof Error ? e.message : String(e)));
+      showSuccess('Gagal mengekspor Jadwal PDF: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  const handleExportCirculationPdf = () => {
+    try {
+      exportCirculationPdf(students, rooms, settings, schedules, {
+        includeRotation: true,
+        pattern: 'rotate-room-forward',
+      });
+      showSuccess('Laporan Pembagian Sirkulasi Peserta Tiap Ruang & Kelas (PDF) berhasil diunduh!');
+    } catch (e: unknown) {
+      showSuccess('Gagal mengekspor Sirkulasi PDF: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  const handleExportCirculationExcel = () => {
+    try {
+      exportCirculationToExcel(students, rooms, settings, schedules, {
+        includeRotation: true,
+        pattern: 'rotate-room-forward',
+      });
+      showSuccess('Laporan Pembagian Sirkulasi Peserta Tiap Ruang & Kelas (Excel) berhasil diunduh!');
+    } catch (e: unknown) {
+      showSuccess('Gagal mengekspor Sirkulasi Excel: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -172,7 +202,7 @@ export const ExportCenter: React.FC<ExportCenterProps> = ({
               <p className="font-semibold text-slate-900">File Excel mencakup lembar kerja:</p>
               <ul className="space-y-1.5 list-disc list-inside text-slate-600">
                 <li>
-                  <strong className="text-slate-800">Sheet Rekapitulasi:</strong> Ringkasan daya tampung, keterisian, rentang NIS, & nama pengawas.
+                  <strong className="text-slate-800">Sheet Rekapitulasi & Sirkulasi Ruang-Kelas:</strong> Ringkasan daya tampung, matriks distribusi Ruang &times; Kelas, rentang NIS, &amp; nama pengawas.
                 </li>
                 <li>
                   <strong className="text-slate-800">Sheet Master Data:</strong> Seluruh {students.length} siswa dengan nomor peserta dan ruangan.
@@ -389,6 +419,51 @@ export const ExportCenter: React.FC<ExportCenterProps> = ({
             >
               <Download className="w-3.5 h-3.5" />
               <span>Unduh Jadwal Ujian PDF</span>
+            </button>
+          </div>
+        </div>
+
+        {/* PARTICIPANT CIRCULATION PER ROOM & CLASS SECTION */}
+        <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
+                <Repeat className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Sirkulasi Peserta Tiap Ruang & Kelas
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Matriks silang Ruang &times; Kelas, sebaran per rombel, dan jadwal rotasi harian
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <p>
+                Memuat tabel matriks jumlah peserta <strong className="text-slate-900">Ruang &times; Kelas</strong> beserta rincian L/P, rentang nomor peserta, sebaran tiap kelas, serta jadwal sirkulasi rotasi ruang per hari ujian.
+              </p>
+              <p className="text-2xs text-slate-500 font-mono">
+                Format Landscape A4 Resmi (PDF) &amp; Multi-Sheet Workbook (.xlsx)
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+            <button
+              onClick={handleExportCirculationExcel}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Unduh Excel</span>
+            </button>
+            <button
+              onClick={handleExportCirculationPdf}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-md shadow-sm transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Unduh Sirkulasi PDF</span>
             </button>
           </div>
         </div>

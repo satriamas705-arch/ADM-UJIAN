@@ -1,8 +1,8 @@
 import React from 'react';
-import { Search, Settings, FileSpreadsheet, Building2, Users, LayoutGrid, Sliders, Eye, Calendar } from 'lucide-react';
+import { Search, Settings, FileSpreadsheet, Building2, Users, LayoutGrid, Sliders, Eye, Calendar, Repeat } from 'lucide-react';
 import { ExamSettings } from '../types';
 
-export type AppTab = 'dashboard' | 'seating' | 'students' | 'manage-students' | 'rooms' | 'schedule' | 'rules' | 'export';
+export type AppTab = 'dashboard' | 'circulation' | 'seating' | 'students' | 'manage-students' | 'rooms' | 'schedule' | 'rules' | 'export';
 
 interface HeaderProps {
   settings: ExamSettings;
@@ -52,7 +52,19 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
-              Alokasi & Ringkasan
+              Alokasi
+            </button>
+
+            <button
+              onClick={() => setActiveTab('circulation')}
+              className={`flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                activeTab === 'circulation'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              Sirkulasi
             </button>
 
             <button
@@ -172,6 +184,14 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             Alokasi
+          </button>
+          <button
+            onClick={() => setActiveTab('circulation')}
+            className={`px-2.5 py-1 text-xs font-medium rounded whitespace-nowrap ${
+              activeTab === 'circulation' ? 'bg-slate-900 text-white' : 'text-slate-600'
+            }`}
+          >
+            Sirkulasi
           </button>
           <button
             onClick={() => setActiveTab('seating')}

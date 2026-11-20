@@ -1,6 +1,11 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Student, Room, ExamSettings, ExamScheduleItem } from '../types';
+import {
+  buildRoomClassMatrix,
+  buildCirculationSchedule,
+  CirculationPattern,
+} from './circulation';
 
 /**
  * Creates official header (Kop Surat) on jsPDF document
@@ -908,4 +913,347 @@ export function exportSchedulePdf(
 
   doc.save(`Jadwal_Ujian_${settings.academicYear.replace('/', '-')}_${Date.now()}.pdf`);
 }
+
+/**
+ * Export official participant circulation breakdown per Room & Class (PDF Landscape A4)
+ */
+export function exportCirculationPdf(
+  students: Student[],
+  rooms: Room[],
+  settings: ExamSettings,
+  schedules: ExamScheduleItem[] = [],
+  options?: {
+    pattern?: CirculationPattern;
+    dayCount?: number;
+    includeRotation?: boolean;
+  }
+): void {
+  const matrix = buildRoomClassMatrix(students, rooms, settings.customClassOrder);
+  const pattern = options?.pattern || 'fixed';
+  const includeRotation = options?.includeRotation ?? false;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Official Letterhead
+  const headerBottomY = renderLetterhead(
+    doc,
+    settings,
+    'PEMBAGIAN SIRKULASI PESERTA TIAP RUANG DAN KELAS',
+    `${(settings.activityName || settings.examTitle).toUpperCase()} — TAHUN PELAJARAN ${settings.academicYear}`
+  );
+
+  // Meta Info Bar
+  let currentY = headerBottomY + 2;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, currentY, pageWidth - 28, 10, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(
+    `Total Ruang: ${rooms.length} Ruang   |   Total Kelas: ${matrix.classes.length} Rombel   |   Peserta Teralokasi: ${matrix.grandTotalAllocated} / ${matrix.grandTotalStudents} Siswa (L: ${matrix.grandTotalMale}, P: ${matrix.grandTotalFemale})   |   Kapasitas: ${matrix.grandTotalCapacity} Kursi`,
+    pageWidth / 2,
+    currentY + 6.3,
+    { align: 'center' }
+  );
+
+  currentY += 14;
+
+  // Section 1: Matriks Ruang x Kelas
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text('A. MATRIKS DISTRIBUSI PESERTA PER RUANG DAN KELAS', 14, currentY);
+  currentY += 3;
+
+  const matrixHead = [
+    [
+      'No',
+      'Ruang',
+      'Lokasi',
+      ...matrix.classes,
+      'L',
+      'P',
+      'Jml',
+      'Kap',
+      'Sisa',
+      'Rentang No. Peserta',
+    ],
+  ];
+
+  const matrixBody: (string | number)[][] = matrix.rows.map((row, idx) => {
+    const classCounts = matrix.classes.map((cls) => {
+      const cnt = row.byClass[cls]?.count || 0;
+      return cnt > 0 ? cnt : '-';
+    });
+    const pRange =
+      row.participantMin && row.participantMax
+        ? `${row.participantMin} s/d ${row.participantMax}`
+        : '-';
+
+    return [
+      idx + 1,
+      `${row.room.name} (${row.room.code})`,
+      row.room.building,
+      ...classCounts,
+      row.male,
+      row.female,
+      row.total,
+      row.room.capacity,
+      row.remainingSeats,
+      pRange,
+    ];
+  });
+
+  // Footer total row
+  const matrixFoot = [
+    [
+      '',
+      'TOTAL KESELURUHAN',
+      `${rooms.length} Ruang`,
+      ...matrix.classes.map((cls) => matrix.classTotals[cls]?.allocated || 0),
+      matrix.grandTotalMale,
+      matrix.grandTotalFemale,
+      matrix.grandTotalAllocated,
+      matrix.grandTotalCapacity,
+      matrix.grandTotalRemaining,
+      '',
+    ],
+  ];
+
+  const colStyles: Record<number, { halign?: 'left' | 'center' | 'right'; fontStyle?: 'normal' | 'bold'; cellWidth?: number | 'auto' }> = {
+    0: { halign: 'center', cellWidth: 9 },
+    1: { halign: 'left', fontStyle: 'bold', cellWidth: 32 },
+    2: { halign: 'left', cellWidth: 34 },
+  };
+
+  matrix.classes.forEach((_, i) => {
+    colStyles[3 + i] = { halign: 'center' };
+  });
+
+  const baseIdx = 3 + matrix.classes.length;
+  colStyles[baseIdx] = { halign: 'center', cellWidth: 10 };
+  colStyles[baseIdx + 1] = { halign: 'center', cellWidth: 10 };
+  colStyles[baseIdx + 2] = { halign: 'center', fontStyle: 'bold', cellWidth: 12 };
+  colStyles[baseIdx + 3] = { halign: 'center', cellWidth: 12 };
+  colStyles[baseIdx + 4] = { halign: 'center', cellWidth: 12 };
+  colStyles[baseIdx + 5] = { halign: 'center', cellWidth: 42 };
+
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: 14, right: 14 },
+    head: matrixHead,
+    body: matrixBody,
+    foot: matrixFoot,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      halign: 'center',
+      valign: 'middle',
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: colStyles,
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  let nextY =
+    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || currentY + 45) + 8;
+
+  // Section 2: Rekapitulasi Sirkulasi per Kelas
+  if (nextY + 40 > pageHeight) {
+    doc.addPage();
+    nextY = 16;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text('B. REKAPITULASI SEBARAN SIRKULASI PER KELAS', 14, nextY);
+  nextY += 3;
+
+  const classRows = matrix.classSummaries.map((cs, idx) => {
+    const distText =
+      cs.roomDistributions.length > 0
+        ? cs.roomDistributions
+            .map((rd) => {
+              const seatRange =
+                rd.seatMin !== undefined && rd.seatMax !== undefined
+                  ? `Meja ${String(rd.seatMin).padStart(2, '0')}-${String(rd.seatMax).padStart(2, '0')}`
+                  : '';
+              return `${rd.room.name} (${rd.count} siswa${seatRange ? ', ' + seatRange : ''})`;
+            })
+            .join('  |  ')
+        : 'Belum dialokasikan';
+
+    return [
+      idx + 1,
+      cs.className,
+      cs.male,
+      cs.female,
+      cs.totalStudents,
+      cs.allocatedStudents,
+      distText,
+    ];
+  });
+
+  autoTable(doc, {
+    startY: nextY,
+    margin: { left: 14, right: 14 },
+    head: [['No', 'Kelas / Rombel', 'L', 'P', 'Total', 'Teralokasi', 'Sebaran Ruang & Nomor Meja']],
+    body: classRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontSize: 7.5,
+      halign: 'center',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'left', fontStyle: 'bold', cellWidth: 28 },
+      2: { halign: 'center', cellWidth: 12 },
+      3: { halign: 'center', cellWidth: 12 },
+      4: { halign: 'center', fontStyle: 'bold', cellWidth: 15 },
+      5: { halign: 'center', cellWidth: 18 },
+      6: { halign: 'left', cellWidth: 'auto' },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  nextY =
+    ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || nextY + 35) + 8;
+
+  // Section 3 (Optional): Jadwal Sirkulasi / Rotasi Ruang per Hari Ujian
+  if (includeRotation) {
+    const rotationDays = buildCirculationSchedule(matrix, schedules, pattern, options?.dayCount);
+    if (rotationDays.length > 0) {
+      if (nextY + 45 > pageHeight) {
+        doc.addPage();
+        nextY = 16;
+      }
+
+      const patternLabelMap: Record<CirculationPattern, string> = {
+        fixed: 'Tetap (Tanpa Rotasi Ruang)',
+        'rotate-room-forward': 'Rotasi Ruang Maju (+1 Ruang / Hari)',
+        'rotate-room-backward': 'Rotasi Ruang Mundur (-1 Ruang / Hari)',
+        'rotate-seat-shift': 'Rotasi Pergeseran Meja Dalam Ruang',
+      };
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(
+        `C. JADWAL SIRKULASI / ROTASI PESERTA PER HARI UJIAN — POLA: ${patternLabelMap[pattern].toUpperCase()}`,
+        14,
+        nextY
+      );
+      nextY += 3;
+
+      const rotHead = [['Hari / Tanggal', 'Mata Pelajaran', ...rooms.map((r) => `${r.name} (${r.code})`)]];
+      const rotBody = rotationDays.map((day) => [
+        `${day.dayLabel}\n${day.dateLabel}`,
+        day.subjects.join(', '),
+        ...day.roomAssignments.map(
+          (ra) => `${ra.sourceGroupLabel} (${ra.studentCount} org)\n${ra.classBreakdownText}\n[${ra.seatShiftNote}]`
+        ),
+      ]);
+
+      autoTable(doc, {
+        startY: nextY,
+        margin: { left: 14, right: 14 },
+        head: rotHead,
+        body: rotBody,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontSize: 7.5,
+          halign: 'center',
+        },
+        styles: {
+          fontSize: 7,
+          cellPadding: 2,
+          textColor: [30, 41, 59],
+          valign: 'top',
+        },
+        columnStyles: {
+          0: { halign: 'left', fontStyle: 'bold', cellWidth: 32 },
+          1: { halign: 'left', cellWidth: 44 },
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+      });
+
+      nextY =
+        ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || nextY + 40) + 10;
+    }
+  }
+
+  // Official Signatures
+  if (nextY + 32 > pageHeight) {
+    doc.addPage();
+    nextY = 20;
+  }
+
+  const sigColLeft = 58;
+  const sigColRight = pageWidth - 58;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(30, 41, 59);
+
+  doc.text('Mengetahui,', sigColLeft, nextY, { align: 'center' });
+  doc.text('Kepala Sekolah', sigColLeft, nextY + 4.5, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(settings.headmaster, sigColLeft, nextY + 21, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(`NIP. ${settings.headmasterNip || '-'}`, sigColLeft, nextY + 25, { align: 'center' });
+
+  const todayStr = settings.examDate.split('-')[0].trim() || '20 Oktober 2026';
+  doc.setFontSize(8.5);
+  doc.text(`Dicetak: ${todayStr}`, sigColRight, nextY, { align: 'center' });
+  doc.text('Ketua Panitia Ujian', sigColRight, nextY + 4.5, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(settings.committeeHead, sigColRight, nextY + 21, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(`NIP. ${settings.committeeNip || '-'}`, sigColRight, nextY + 25, { align: 'center' });
+
+  doc.save(`Sirkulasi_Peserta_Ruang_Kelas_${settings.academicYear.replace('/', '-')}_${Date.now()}.pdf`);
+}
+
 

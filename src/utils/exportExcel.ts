@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
-import { Student, Room, ExamSettings } from '../types';
+import { Student, Room, ExamSettings, ExamScheduleItem } from '../types';
+import {
+  buildRoomClassMatrix,
+  buildCirculationSchedule,
+  CirculationPattern,
+} from './circulation';
 
 /**
  * Exports complete exam room allocation to Excel (.xlsx) with multiple organized sheets:
@@ -93,6 +98,76 @@ export function exportAllocationToExcel(
     { wch: 24 },
   ];
   XLSX.utils.book_append_sheet(wb, wsRekap, 'Rekapitulasi');
+
+  // --- SHEET 1B: MATRIKS SIRKULASI RUANG & KELAS ---
+  const circMatrix = buildRoomClassMatrix(students, rooms, settings.customClassOrder);
+  const circSheetData: (string | number)[][] = [
+    [settings.schoolName],
+    [`PEMBAGIAN SIRKULASI PESERTA TIAP RUANG DAN KELAS - ${settings.activityName || settings.examTitle}`],
+    [`Tahun Pelajaran: ${settings.academicYear} | Tanggal: ${settings.examDate}`],
+    [],
+    [
+      'No',
+      'Kode',
+      'Nama Ruang',
+      'Lokasi',
+      ...circMatrix.classes,
+      'L',
+      'P',
+      'Total Terisi',
+      'Kapasitas',
+      'Sisa Kursi',
+      'Rentang No. Peserta',
+    ],
+  ];
+
+  circMatrix.rows.forEach((row, idx) => {
+    circSheetData.push([
+      idx + 1,
+      row.room.code,
+      row.room.name,
+      row.room.building,
+      ...circMatrix.classes.map((cls) => row.byClass[cls]?.count || 0),
+      row.male,
+      row.female,
+      row.total,
+      row.room.capacity,
+      row.remainingSeats,
+      row.participantMin && row.participantMax
+        ? `${row.participantMin} s/d ${row.participantMax}`
+        : '-',
+    ]);
+  });
+
+  circSheetData.push([
+    '',
+    'TOTAL',
+    `${rooms.length} Ruang`,
+    '',
+    ...circMatrix.classes.map((cls) => circMatrix.classTotals[cls]?.allocated || 0),
+    circMatrix.grandTotalMale,
+    circMatrix.grandTotalFemale,
+    circMatrix.grandTotalAllocated,
+    circMatrix.grandTotalCapacity,
+    circMatrix.grandTotalRemaining,
+    '',
+  ]);
+
+  const wsCirc = XLSX.utils.aoa_to_sheet(circSheetData);
+  wsCirc['!cols'] = [
+    { wch: 5 },
+    { wch: 8 },
+    { wch: 15 },
+    { wch: 22 },
+    ...circMatrix.classes.map(() => ({ wch: 12 })),
+    { wch: 6 },
+    { wch: 6 },
+    { wch: 12 },
+    { wch: 11 },
+    { wch: 11 },
+    { wch: 28 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsCirc, 'Sirkulasi Ruang-Kelas');
 
   // --- SHEET 2: MASTER SELURUH SISWA ---
   const masterHeaders = [
@@ -251,6 +326,177 @@ export function exportAllocationToExcel(
   // Save Excel file
   const fileName = `Alokasi_Ruang_Ujian_${settings.schoolName.replace(/\s+/g, '_').slice(0, 20)}_${Date.now()}.xlsx`;
   XLSX.writeFile(wb, fileName);
+}
+
+/**
+ * Exports dedicated Participant Circulation report (Room x Class Matrix, Per-Class Breakdown, and Daily Rotation Schedule) to Excel
+ */
+export function exportCirculationToExcel(
+  students: Student[],
+  rooms: Room[],
+  settings: ExamSettings,
+  schedules: ExamScheduleItem[] = [],
+  options?: {
+    pattern?: CirculationPattern;
+    dayCount?: number;
+    includeRotation?: boolean;
+  }
+): void {
+  const wb = XLSX.utils.book_new();
+  const matrix = buildRoomClassMatrix(students, rooms, settings.customClassOrder);
+
+  // Sheet 1: Matriks Ruang x Kelas
+  const matrixData: (string | number)[][] = [
+    [settings.schoolName],
+    [`MATRIKS PEMBAGIAN SIRKULASI PESERTA TIAP RUANG DAN KELAS`],
+    [`${settings.activityName || settings.examTitle} | Tahun Pelajaran ${settings.academicYear}`],
+    [],
+    [
+      'No',
+      'Kode',
+      'Nama Ruang',
+      'Lokasi / Gedung',
+      ...matrix.classes,
+      'L',
+      'P',
+      'Terisi',
+      'Kapasitas',
+      'Sisa',
+      'Rentang No. Peserta',
+    ],
+  ];
+
+  matrix.rows.forEach((row, idx) => {
+    matrixData.push([
+      idx + 1,
+      row.room.code,
+      row.room.name,
+      row.room.building,
+      ...matrix.classes.map((cls) => row.byClass[cls]?.count || 0),
+      row.male,
+      row.female,
+      row.total,
+      row.room.capacity,
+      row.remainingSeats,
+      row.participantMin && row.participantMax
+        ? `${row.participantMin} s/d ${row.participantMax}`
+        : '-',
+    ]);
+  });
+
+  matrixData.push([
+    '',
+    'TOTAL',
+    `${rooms.length} Ruang`,
+    '',
+    ...matrix.classes.map((cls) => matrix.classTotals[cls]?.allocated || 0),
+    matrix.grandTotalMale,
+    matrix.grandTotalFemale,
+    matrix.grandTotalAllocated,
+    matrix.grandTotalCapacity,
+    matrix.grandTotalRemaining,
+    '',
+  ]);
+
+  const wsMatrix = XLSX.utils.aoa_to_sheet(matrixData);
+  wsMatrix['!cols'] = [
+    { wch: 5 },
+    { wch: 8 },
+    { wch: 15 },
+    { wch: 22 },
+    ...matrix.classes.map(() => ({ wch: 12 })),
+    { wch: 6 },
+    { wch: 6 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 8 },
+    { wch: 28 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsMatrix, 'Matriks Ruang x Kelas');
+
+  // Sheet 2: Rekapitulasi Sirkulasi per Kelas
+  const classData: (string | number)[][] = [
+    [settings.schoolName],
+    ['REKAPITULASI SEBARAN SIRKULASI PER KELAS'],
+    [],
+    ['No', 'Kelas / Rombel', 'L', 'P', 'Total Siswa', 'Teralokasi', 'Belum Alokasi', 'Sebaran Ruang & Meja'],
+  ];
+
+  matrix.classSummaries.forEach((cs, idx) => {
+    const dist =
+      cs.roomDistributions.length > 0
+        ? cs.roomDistributions
+            .map((rd) => {
+              const seatRange =
+                rd.seatMin !== undefined && rd.seatMax !== undefined
+                  ? `Meja ${String(rd.seatMin).padStart(2, '0')}-${String(rd.seatMax).padStart(2, '0')}`
+                  : '';
+              return `${rd.room.name}: ${rd.count} siswa (${seatRange})`;
+            })
+            .join(' | ')
+        : 'Belum dialokasikan';
+
+    classData.push([
+      idx + 1,
+      cs.className,
+      cs.male,
+      cs.female,
+      cs.totalStudents,
+      cs.allocatedStudents,
+      cs.unallocatedStudents,
+      dist,
+    ]);
+  });
+
+  const wsClass = XLSX.utils.aoa_to_sheet(classData);
+  wsClass['!cols'] = [
+    { wch: 5 },
+    { wch: 16 },
+    { wch: 6 },
+    { wch: 6 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 60 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsClass, 'Sirkulasi per Kelas');
+
+  // Sheet 3: Jadwal Sirkulasi / Rotasi Hari (if enabled)
+  if (options?.includeRotation) {
+    const pattern = options.pattern || 'fixed';
+    const rotationDays = buildCirculationSchedule(matrix, schedules, pattern, options.dayCount);
+    const rotData: (string | number)[][] = [
+      [settings.schoolName],
+      ['JADWAL SIRKULASI / ROTASI PESERTA PER HARI UJIAN'],
+      [],
+      ['Hari', 'Tanggal', 'Mata Pelajaran', ...rooms.map((r) => `${r.name} (${r.code})`)],
+    ];
+
+    rotationDays.forEach((day) => {
+      rotData.push([
+        day.dayLabel,
+        day.dateLabel,
+        day.subjects.join(', '),
+        ...day.roomAssignments.map(
+          (ra) => `${ra.sourceGroupLabel} (${ra.studentCount} org) - ${ra.classBreakdownText} [${ra.seatShiftNote}]`
+        ),
+      ]);
+    });
+
+    const wsRot = XLSX.utils.aoa_to_sheet(rotData);
+    wsRot['!cols'] = [
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 30 },
+      ...rooms.map(() => ({ wch: 36 })),
+    ];
+    XLSX.utils.book_append_sheet(wb, wsRot, 'Jadwal Rotasi Hari');
+  }
+
+  XLSX.writeFile(
+    wb,
+    `Sirkulasi_Peserta_Ruang_Kelas_${settings.academicYear.replace('/', '-')}_${Date.now()}.xlsx`
+  );
 }
 
 /**

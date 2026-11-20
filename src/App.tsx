@@ -8,11 +8,13 @@ import { RoomManagement } from './components/RoomManagement';
 import { ScheduleManagement } from './components/ScheduleManagement';
 import { RulesAndPreviewMenu } from './components/RulesAndPreviewMenu';
 import { ExportCenter } from './components/ExportCenter';
+import { ParticipantCirculation } from './components/ParticipantCirculation';
 import { StudentSearchModal } from './components/StudentSearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Student, Room, ExamSettings, ExamScheduleItem } from './types';
 import { defaultExamSettings, defaultRooms, sampleStudents, defaultExamSchedule } from './utils/sampleData';
 import { allocateStudentsToRooms } from './utils/allocator';
+import { applyCirculationDayToStudents, CirculationPattern } from './utils/circulation';
 import { Check, Sparkles } from 'lucide-react';
 
 export default function App() {
@@ -175,6 +177,29 @@ export default function App() {
     }));
     setStudents(reset);
     showToast('Alokasi ruang dan nomor meja berhasil direset.');
+  };
+
+  // Apply Daily Circulation / Rotation
+  const handleApplyCirculationDay = (
+    pattern: CirculationPattern,
+    dayIndex: number,
+    dayLabel: string
+  ) => {
+    const rotated = applyCirculationDayToStudents(
+      students,
+      rooms,
+      pattern,
+      dayIndex,
+      settings.participantPrefix
+    );
+    setStudents(rotated);
+    showToast(`Sirkulasi rotasi untuk ${dayLabel} berhasil diterapkan ke alokasi ruang aktif!`);
+  };
+
+  // Apply edited circulation matrix / individual move / custom rotation to all rooms
+  const handleUpdateStudentsFromCirculation = (updatedStudents: Student[], message: string) => {
+    setStudents(updatedStudents);
+    showToast(message);
   };
 
   // Swap Seats between two students
@@ -368,6 +393,20 @@ export default function App() {
             onResetAllocation={handleResetAllocation}
             onSelectRoomForSeating={handleSelectRoomForSeating}
             onNavigateTab={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'circulation' && (
+          <ParticipantCirculation
+            students={students}
+            rooms={rooms}
+            settings={settings}
+            schedules={schedules}
+            onRunAllocation={handleRunAllocation}
+            onSelectRoomForSeating={handleSelectRoomForSeating}
+            onApplyCirculationDay={handleApplyCirculationDay}
+            onUpdateStudents={handleUpdateStudentsFromCirculation}
+            onViewStudentCard={handleViewStudentCard}
           />
         )}
 
